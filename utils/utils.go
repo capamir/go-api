@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"net/http"
 	"encoding/json"
+	"github.com/go-playground/validator/v10"
 )
+
+var Validate = validator.New()
 
 func ParseJSON(req *http.Request, payload any) error {
 	if req.Body == nil {
