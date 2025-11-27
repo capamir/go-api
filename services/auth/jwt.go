@@ -1,16 +1,21 @@
 package auth
 
 import (
-	// "context"
-	// "log"
-	// "net/http"
+	"context"
+	"fmt"
+	"log"
+	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/capamir/go-api/configs"
-	// "github.com/capamir/go-api/utils"
+	"github.com/capamir/go-api/types"
+	"github.com/capamir/go-api/utils"
 	"github.com/golang-jwt/jwt/v5"
 )
+
+type contextKey string
+const UserKey contextKey = "userID"
 
 func CreateJWT(secret []byte, userID int) (string, error) {
 	expiration := time.Second * time.Duration(configs.Envs.JWTExpirationInSeconds)
@@ -28,46 +33,70 @@ func CreateJWT(secret []byte, userID int) (string, error) {
 	return tokenString, err
 }
 
-// func WithJWTAuth(handlerFunc http.HandlerFunc, store types.UserStore) http.HandlerFunc {
-// 	return func(w http.ResponseWriter, r *http.Request) {
-// 		tokenString := utils.GetTokenFromRequest(r)
+func validateJWT(tokenString string) (*jwt.Token, error) {
+	return jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
 
-// 		token, err := validateJWT(tokenString)
-// 		if err != nil {
-// 			log.Printf("failed to validate token: %v", err)
-// 			permissionDenied(w)
-// 			return
-// 		}
+		return []byte(configs.Envs.JWTSecret), nil
+	})
+}
 
-// 		if !token.Valid {
-// 			log.Println("invalid token")
-// 			permissionDenied(w)
-// 			return
-// 		}
 
-// 		claims := token.Claims.(jwt.MapClaims)
-// 		str := claims["userID"].(string)
+func permissionDenied(w http.ResponseWriter) {
+	utils.WriteError(w, http.StatusForbidden, fmt.Errorf("permission denied"))
+}
 
-// 		userID, err := strconv.Atoi(str)
-// 		if err != nil {
-// 			log.Printf("failed to convert userID to int: %v", err)
-// 			permissionDenied(w)
-// 			return
-// 		}
+func WithJWTAuth(handlerFunc http.HandlerFunc, store types.UserStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		tokenString := utils.GetTokenFromRequest(r)
 
-// 		u, err := store.GetUserByID(userID)
-// 		if err != nil {
-// 			log.Printf("failed to get user by id: %v", err)
-// 			permissionDenied(w)
-// 			return
-// 		}
+		token, err := validateJWT(tokenString)
+		if err != nil {
+			log.Printf("failed to validate token: %v", err)
+			permissionDenied(w)
+			return
+		}
 
-// 		// Add the user to the context
-// 		ctx := r.Context()
-// 		ctx = context.WithValue(ctx, UserKey, u.ID)
-// 		r = r.WithContext(ctx)
+		if !token.Valid {
+			log.Println("invalid token")
+			permissionDenied(w)
+			return
+		}
 
-// 		// Call the function if the token is valid
-// 		handlerFunc(w, r)
-// 	}
-// }
+		claims := token.Claims.(jwt.MapClaims)
+		str := claims["userID"].(string)
+
+		userID, err := strconv.Atoi(str)
+		if err != nil {
+			log.Printf("failed to convert userID to int: %v", err)
+			permissionDenied(w)
+			return
+		}
+
+		u, err := store.GetUserByID(userID)
+		if err != nil {
+			log.Printf("failed to get user by id: %v", err)
+			permissionDenied(w)
+			return
+		}
+
+		// Add the user to the context
+		ctx := r.Context()
+		ctx = context.WithValue(ctx, UserKey, u.ID)
+		r = r.WithContext(ctx)
+
+		// Call the function if the token is valid
+		handlerFunc(w, r)
+	}
+}
+
+func GetUserIDFromContext(ctx context.Context) int {
+	userID, ok := ctx.Value(UserKey).(int)
+	if !ok {
+		return -1
+	}
+
+	return userID
+}
