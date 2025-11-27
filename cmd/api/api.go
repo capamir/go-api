@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/capamir/go-api/services/product"
 	"github.com/capamir/go-api/services/user"
 	"github.com/gorilla/mux"
 )
@@ -28,6 +29,10 @@ func (s *APIServer) Run() error {
 	userStore := user.NewStore(s.db)
 	userHandler := user.NewHandler(userStore)
 	userHandler.RegisterRoutes(subrouter)
+
+	productStore := product.NewStore(s.db)
+	productHandler := product.NewHandler(productStore, userStore)
+	productHandler.RegisterRoutes(subrouter)
 	
 	log.Println("Listening on", s.addr)
 
