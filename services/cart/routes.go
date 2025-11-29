@@ -34,41 +34,61 @@ func (h *Handler) RegisterRoutes(router *mux.Router) {
 }
 
 func (h *Handler) handleCheckout(w http.ResponseWriter, r *http.Request) {
-	userID := auth.GetUserIDFromContext(r.Context())
+	// ✅ FIX: Properly handle error from GetUserIDFromContext
+	userID, err := auth.GetUserIDFromContext(r.Context())
+	if err != nil {
+		utils.S.Errorf("Failed to get user ID from context: %v", err)
+		utils.WriteError(w, http.StatusUnauthorized, fmt.Errorf("authentication required"))
+		return
+	}
 
+	// Parse cart payload
 	var cart types.CartCheckoutPayload
 	if err := utils.ParseJSON(r, &cart); err != nil {
-		utils.WriteError(w, http.StatusBadRequest, err)
+		utils.S.Warnf("Invalid JSON payload from user %d: %v", userID, err)
+		utils.WriteError(w, http.StatusBadRequest, fmt.Errorf("invalid request payload"))
 		return
 	}
 
+	// Validate cart structure
 	if err := utils.Validate.Struct(cart); err != nil {
-		errors := err.(validator.ValidationErrors)
-		utils.WriteError(w, http.StatusBadRequest, fmt.Errorf("invalid payload: %v", errors))
+		validationErrors := err.(validator.ValidationErrors)
+		utils.S.Warnf("Validation failed for user %d: %v", userID, validationErrors)
+		utils.WriteError(w, http.StatusBadRequest, fmt.Errorf("invalid payload: %v", validationErrors))
 		return
 	}
 
+	// Extract product IDs from cart items
 	productIds, err := getCartItemsIDs(cart.Items)
 	if err != nil {
+		utils.S.Warnf("Invalid cart items from user %d: %v", userID, err)
 		utils.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
 
-	// get products
+	// Fetch products from database
 	products, err := h.store.GetProductsByID(productIds)
 	if err != nil {
-		utils.WriteError(w, http.StatusInternalServerError, err)
+		utils.S.Errorf("Failed to fetch products for user %d: %v", userID, err)
+		utils.WriteError(w, http.StatusInternalServerError, fmt.Errorf("failed to fetch products"))
 		return
 	}
 
+	// Create order with all validations
 	orderID, totalPrice, err := h.createOrder(products, cart.Items, userID)
 	if err != nil {
+		utils.S.Warnf("Order creation failed for user %d: %v", userID, err)
 		utils.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
 
+	utils.S.Successf("Order %d created for user %d - Total: $%.2f", orderID, userID, totalPrice)
+
+	// Return success response
 	utils.WriteJSON(w, http.StatusOK, map[string]interface{}{
-		"total_price": totalPrice,
+		"success":     true,
 		"order_id":    orderID,
+		"total_price": totalPrice,
+		"message":     "Order created successfully",
 	})
 }
