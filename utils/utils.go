@@ -24,7 +24,8 @@ func WriteJSON(res http.ResponseWriter, status int, v any) error {
 }
 
 func WriteError(res http.ResponseWriter, status int, err error) {
-	WriteJSON(res, status, map[string]string{"error": err.Error()})
+	// Use the colorful error writer
+	S.WriteError(res, status, err)
 }
 
 func GetTokenFromRequest(r *http.Request) string {

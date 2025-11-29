@@ -2,8 +2,10 @@ package configs
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"strconv"
+
 	"github.com/joho/godotenv"
 )
 
@@ -21,7 +23,11 @@ JWTExpirationInSeconds int
 var Envs = initConfig()
 
 func initConfig() Config {
-	godotenv.Load()
+	// Load .env file if it exists
+	if err := godotenv.Load(); err != nil {
+		log.Println("No .env file found, using environment variables")
+	}
+
 	return Config{
 		PublicHost:             getEnv("PUBLIC_HOST", "http://localhost"),
 		Port:                   getEnv("PORT", "8080"),
@@ -29,8 +35,8 @@ func initConfig() Config {
 		DBPassword:             getEnv("DB_PASSWORD", "mypassword"),
 		DBAddress:              fmt.Sprintf("%s:%s", getEnv("DB_HOST", "127.0.0.1"), getEnv("DB_PORT", "3306")),
 		DBName:                 getEnv("DB_NAME", "ecom"),
-		JWTSecret:              getEnv("JWTSecret", "randomsecretkey"),
-		JWTExpirationInSeconds: getEnvAsInt("JWTExpirationInSeconds", 86400),
+		JWTSecret:              getEnvRequired("JWT_SECRET"),
+		JWTExpirationInSeconds: getEnvAsInt("JWT_EXPIRATION_IN_SECONDS", 86400), // Fixed: consistent naming
 	}
 }
 
@@ -51,4 +57,13 @@ func getEnvAsInt(key string, fallback int) int {
 		}
 	}
 	return fallback
+}
+
+// getEnvRequired gets env var or panics if missing
+func getEnvRequired(key string) string {
+	value := os.Getenv(key)
+	if value == "" {
+		panic(fmt.Sprintf("%s environment variable is required", key))
+	}
+	return value
 }
