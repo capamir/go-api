@@ -45,8 +45,8 @@ type ServerConfig struct {
 	WriteTimeout time.Duration
 }
 
-// Global config instance
-var AppConfig *Config
+// Global config instance - RENAMED to avoid conflict!
+var Cfg *Config
 
 // Load reads configuration from environment variables
 func Load() (*Config, error) {
@@ -86,7 +86,7 @@ func Load() (*Config, error) {
 	}
 
 	// Set global config
-	AppConfig = config
+	Cfg = config
 
 	return config, nil
 }
