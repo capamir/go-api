@@ -11,6 +11,10 @@ import (
 
 	"github.com/capamir/go-api/internal/config"
 	"github.com/capamir/go-api/internal/database"
+	"github.com/capamir/go-api/internal/handler"
+	"github.com/capamir/go-api/internal/middleware"
+	"github.com/capamir/go-api/internal/repository"
+	"github.com/capamir/go-api/internal/service"
 	"github.com/capamir/go-api/pkg/logger"
 	"github.com/gin-gonic/gin"
 )
@@ -28,6 +32,20 @@ func main() {
 	}
 	defer database.Close()
 
+	// Run auto-migrations
+	if err := database.AutoMigrate(); err != nil {
+		logger.Fatal("Failed to run migrations: %v", err)
+	}
+
+	// Initialize repositories
+	userRepo := repository.NewUserRepository(database.GetDB())
+
+	// Initialize services
+	authService := service.NewAuthService(userRepo)
+
+	// Initialize handlers
+	authHandler := handler.NewAuthHandler(authService)
+
 	// Set Gin mode
 	if cfg.IsProduction() {
 		gin.SetMode(gin.ReleaseMode)
@@ -36,26 +54,43 @@ func main() {
 	// Create Gin router
 	router := gin.New()
 
-	// Add basic middleware
+	// Global middleware
 	router.Use(gin.Recovery())
+	router.Use(gin.Logger())
 
-	// Health check endpoint
+	// Health check
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
-			"status":  "healthy",
-			"version": "1.0.0",
+			"status": "healthy",
+			"time":   time.Now().Format(time.RFC3339),
 		})
 	})
+
+	// API v1 routes
+	v1 := router.Group("/api/v1")
+	{
+		// Auth routes (public)
+		auth := v1.Group("/auth")
+		{
+			auth.POST("/register", authHandler.Register)
+			auth.POST("/login", authHandler.Login)
+			auth.GET("/me", middleware.AuthMiddleware(), authHandler.GetProfile)
+		}
+
+		// Protected routes example
+		// users := v1.Group("/users")
+		// users.Use(middleware.AuthMiddleware())
+		// {
+		//     users.GET("", userHandler.GetAll)
+		// }
+	}
 
 	// Root endpoint
 	router.GET("/", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"message": "🚀 E-Commerce API",
 			"version": "1.0.0",
-			"endpoints": gin.H{
-				"health": "/health",
-				"api":    "/api/v1",
-			},
+			"docs":    "/api/v1/docs",
 		})
 	})
 
@@ -71,7 +106,7 @@ func main() {
 	// Print banner
 	logger.Log.Banner("E-Commerce API", "v1.0.0", cfg.App.Port)
 
-	// Start server in goroutine
+	// Start server
 	go func() {
 		logger.Info("Server starting on http://localhost%s", addr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -79,14 +114,13 @@ func main() {
 		}
 	}()
 
-	// Wait for interrupt signal (Ctrl+C)
+	// Wait for interrupt
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
 	// Graceful shutdown
 	logger.Warn("Shutting down server...")
-
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
