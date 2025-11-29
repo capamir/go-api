@@ -29,13 +29,18 @@ func WriteError(res http.ResponseWriter, status int, err error) {
 }
 
 func GetTokenFromRequest(r *http.Request) string {
+	// First check Authorization header
 	tokenAuth := r.Header.Get("Authorization")
-	tokenQuery := r.URL.Query().Get("token")
-	
 	if tokenAuth != "" {
+		// Handle "Bearer <token>" format
+		if len(tokenAuth) > 7 && tokenAuth[:7] == "Bearer " {
+			return tokenAuth[7:]
+		}
 		return tokenAuth
 	}
 
+	// Then check token query parameter
+	tokenQuery := r.URL.Query().Get("token")
 	if tokenQuery != "" {
 		return tokenQuery
 	}
