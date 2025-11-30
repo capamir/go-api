@@ -1,5 +1,19 @@
 ## Development Commands
 
+## Quick Commands Reference
+
+| Task | Command |
+|------|---------|
+| Run app | `go run cmd/api/main.go` |
+| Build | `go build -o bin/api.exe cmd/api/main.go` |
+| Test | `go test -v ./...` |
+| Format | `go fmt ./...` |
+| Install deps | `go mod download` |
+| Tidy deps | `go mod tidy` |
+| Clean | `Remove-Item -Recurse -Force bin` |
+
+---
+
 ### Run Application
 ```
 go run cmd/api/main.go
@@ -93,31 +107,6 @@ go mod tidy
 go mod verify
 ```
 
----
-
-## Code Quality
-
-### Format Code
-```
-go fmt ./...
-```
-
-### Lint Code (Requires golangci-lint)
-```
-# Install golangci-lint first:
-go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-
-# Run linter
-golangci-lint run
-```
-
-### Vet Code (Find Potential Bugs)
-```
-go vet ./...
-```
-
----
-
 ## Cleaning
 
 ### Remove Build Artifacts
@@ -159,122 +148,6 @@ curl -X GET http://localhost:8080/api/v1/auth/me `
 
 ---
 
-## PowerShell Scripts (Recommended!)
-
-Create `scripts/run.ps1`:
-```
-# Run the application
-Write-Host "Starting application..." -ForegroundColor Green
-go run cmd/api/main.go
-```
-
-Create `scripts/build.ps1`:
-```
-# Build the application
-Write-Host "Building application..." -ForegroundColor Blue
-New-Item -ItemType Directory -Force -Path bin | Out-Null
-go build -o bin/api.exe cmd/api/main.go
-Write-Host "Build complete: bin/api.exe" -ForegroundColor Green
-```
-
-Create `scripts/test.ps1`:
-```
-# Run tests
-Write-Host "Running tests..." -ForegroundColor Blue
-go test -v ./...
-```
-
-**Usage:**
-```
-.\scripts\run.ps1
-.\scripts\build.ps1
-.\scripts\test.ps1
-```
-
----
-
-## Environment Setup
-
-### Create .env file (First Time)
-```
-Copy-Item .env.example .env
-```
-
-### Edit .env file
-```
-notepad .env
-```
-
----
-
-## Git Commands
-
-### Initial Setup
-```
-git init
-git add .
-git commit -m "Initial commit - Phase 2 complete"
-```
-
-### Add Remote
-```
-git remote add origin https://github.com/capamir/go-api.git
-git branch -M main
-git push -u origin main
-```
-
-### Create Phase Branch
-```
-git checkout -b phase-2-authentication
-git add .
-git commit -m "Complete Phase 2: Authentication system"
-git push origin phase-2-authentication
-```
-
----
-
-## Quick Commands Reference
-
-| Task | Command |
-|------|---------|
-| Run app | `go run cmd/api/main.go` |
-| Build | `go build -o bin/api.exe cmd/api/main.go` |
-| Test | `go test -v ./...` |
-| Format | `go fmt ./...` |
-| Install deps | `go mod download` |
-| Tidy deps | `go mod tidy` |
-| Clean | `Remove-Item -Recurse -Force bin` |
-
----
-
-## Windows-Specific Notes
-
-1. **Use backticks (`) for line continuation** in PowerShell (not backslash `\`)
-
-2. **Escape quotes in JSON strings:**
-   ```
-   # Wrong:
-   -d '{"key": "value"}'
-   
-   # Correct:
-   -d '{\"key\": \"value\"}'
-   ```
-
-3. **Path separators:**
-   - PowerShell accepts both `/` and `\`
-   - Use `/` for cross-platform compatibility
-
-4. **Installing `make` on Windows (Optional):**
-   ```
-   # Using Chocolatey
-   choco install make
-   
-   # Using Scoop
-   scoop install make
-   ```
-
----
-
 ## Recommended Tools for Windows
 
 1. **Windows Terminal** - Modern terminal with tabs
@@ -284,45 +157,3 @@ git push origin phase-2-authentication
 5. **MySQL Workbench** - Database GUI
 
 ---
-
-## Alternative: Use Task Runner
-
-Install **Task** (Makefile alternative):
-```
-go install github.com/go-task/task/v3/cmd/task@latest
-```
-
-Create `Taskfile.yml`:
-```
-version: '3'
-
-tasks:
-  run:
-    desc: Run the application
-    cmds:
-      - go run cmd/api/main.go
-
-  build:
-    desc: Build the application
-    cmds:
-      - go build -o bin/api.exe cmd/api/main.go
-
-  test:
-    desc: Run tests
-    cmds:
-      - go test -v ./...
-```
-
-**Usage:**
-```
-task run
-task build
-task test
-```
-
----
-
-**All commands tested on Windows 11 with PowerShell 7** ✅
-```
-
-***
