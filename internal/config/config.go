@@ -1,30 +1,26 @@
 package config
 
 import (
-	"fmt"
-	"log"
 	"os"
 	"strconv"
 	"time"
-
-	"github.com/joho/godotenv"
 )
 
-// Config holds all application configuration
 type Config struct {
 	App      AppConfig
 	Database DatabaseConfig
 	JWT      JWTConfig
 	Server   ServerConfig
+	Email    EmailConfig // 🆕 Add this
 }
 
-// AppConfig holds application-specific settings
 type AppConfig struct {
-	Environment string
-	Port        string
+	Name string
+	Env  string
+	Port string
+	URL  string // 🆕 Add this
 }
 
-// DatabaseConfig holds database connection settings
 type DatabaseConfig struct {
 	Host     string
 	Port     string
@@ -33,65 +29,65 @@ type DatabaseConfig struct {
 	Name     string
 }
 
-// JWTConfig holds JWT authentication settings
 type JWTConfig struct {
 	Secret     string
 	Expiration time.Duration
 }
 
-// ServerConfig holds HTTP server settings
 type ServerConfig struct {
 	ReadTimeout  time.Duration
 	WriteTimeout time.Duration
 }
 
-// Global config instance - RENAMED to avoid conflict!
-var Cfg *Config
+// 🆕 Add this struct
+type EmailConfig struct {
+	From     string
+	Password string
+	Host     string
+	Port     int
+	UseTLS   bool
+}
 
-// Load reads configuration from environment variables
 func Load() (*Config, error) {
-	// Load .env file (ignore error in production where env vars are set directly)
-	if err := godotenv.Load(); err != nil {
-		log.Println("No .env file found, using environment variables")
-	}
-
-	// Validate required variables
-	requiredVars := []string{"JWT_SECRET", "DB_PASSWORD"}
-	for _, v := range requiredVars {
-		if os.Getenv(v) == "" {
-			return nil, fmt.Errorf("required environment variable %s is not set", v)
-		}
-	}
-
-	config := &Config{
+	cfg := &Config{
 		App: AppConfig{
-			Environment: getEnv("APP_ENV", "development"),
-			Port:        getEnv("APP_PORT", "8080"),
+			Name: getEnv("APP_NAME", "E-Commerce API"),
+			Env:  getEnv("APP_ENV", "development"),
+			Port: getEnv("APP_PORT", "8080"),
+			URL:  getEnv("APP_URL", "http://localhost:8080"), // 🆕 Add this
 		},
 		Database: DatabaseConfig{
-			Host:     getEnv("DB_HOST", "127.0.0.1"),
+			Host:     getEnv("DB_HOST", "localhost"),
 			Port:     getEnv("DB_PORT", "3306"),
 			User:     getEnv("DB_USER", "root"),
 			Password: getEnv("DB_PASSWORD", ""),
 			Name:     getEnv("DB_NAME", "ecommerce"),
 		},
 		JWT: JWTConfig{
-			Secret:     getEnv("JWT_SECRET", ""),
-			Expiration: time.Hour * time.Duration(getEnvAsInt("JWT_EXPIRATION_HOURS", 24)),
+			Secret:     getEnv("JWT_SECRET", "default-secret-change-this"),
+			Expiration: parseDuration(getEnv("JWT_EXPIRATION", "24h")),
 		},
 		Server: ServerConfig{
-			ReadTimeout:  time.Second * time.Duration(getEnvAsInt("SERVER_READ_TIMEOUT", 15)),
-			WriteTimeout: time.Second * time.Duration(getEnvAsInt("SERVER_WRITE_TIMEOUT", 15)),
+			ReadTimeout:  10 * time.Second,
+			WriteTimeout: 10 * time.Second,
+		},
+		// 🆕 Add this
+		Email: EmailConfig{
+			From:     getEnv("EMAIL_FROM", ""),
+			Password: getEnv("EMAIL_PASSWORD", ""),
+			Host:     getEnv("EMAIL_HOST", "smtp.gmail.com"),
+			Port:     getEnvInt("EMAIL_PORT", 587),
+			UseTLS:   getEnvBool("EMAIL_USE_TLS", true),
 		},
 	}
 
-	// Set global config
-	Cfg = config
-
-	return config, nil
+	return cfg, nil
 }
 
-// getEnv retrieves an environment variable or returns a default value
+func (c *Config) IsProduction() bool {
+	return c.App.Env == "production"
+}
+
 func getEnv(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
@@ -99,8 +95,7 @@ func getEnv(key, defaultValue string) string {
 	return defaultValue
 }
 
-// getEnvAsInt retrieves an environment variable as integer or returns a default
-func getEnvAsInt(key string, defaultValue int) int {
+func getEnvInt(key string, defaultValue int) int {
 	if value := os.Getenv(key); value != "" {
 		if intValue, err := strconv.Atoi(value); err == nil {
 			return intValue
@@ -109,12 +104,19 @@ func getEnvAsInt(key string, defaultValue int) int {
 	return defaultValue
 }
 
-// IsDevelopment checks if app is in development mode
-func (c *Config) IsDevelopment() bool {
-	return c.App.Environment == "development"
+func getEnvBool(key string, defaultValue bool) bool {
+	if value := os.Getenv(key); value != "" {
+		if boolValue, err := strconv.ParseBool(value); err == nil {
+			return boolValue
+		}
+	}
+	return defaultValue
 }
 
-// IsProduction checks if app is in production mode
-func (c *Config) IsProduction() bool {
-	return c.App.Environment == "production"
+func parseDuration(s string) time.Duration {
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return 24 * time.Hour
+	}
+	return d
 }

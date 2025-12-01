@@ -5,23 +5,20 @@ import (
 	"github.com/capamir/go-api/pkg/logger"
 )
 
-// AutoMigrate runs automatic migrations for all models
+// AutoMigrate runs database migrations
 func AutoMigrate() error {
 	logger.Info("Running database migrations...")
 
+	// Add all models here
 	err := DB.AutoMigrate(
 		&models.User{},
-		// We'll add more models here later
-		// &models.Product{},
-		// &models.Order{},
-		// &models.OrderItem{},
+		&models.Category{}, // 🆕 Add this
 	)
 
 	if err != nil {
-		logger.Error("Migration failed: %v", err)
 		return err
 	}
 
-	logger.Success("Database migrations completed successfully!")
+	logger.Success("Database migrations completed successfully")
 	return nil
 }

@@ -8,7 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
-
+	"github.com/joho/godotenv"
 	"github.com/capamir/go-api/internal/config"
 	"github.com/capamir/go-api/internal/database"
 	"github.com/capamir/go-api/internal/handler"
@@ -21,6 +21,11 @@ import (
 )
 
 func main() {
+	// 🆕 Load .env file
+	if err := godotenv.Load(); err != nil {
+		logger.Warn("No .env file found, using environment variables")
+	}
+	
 	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
@@ -38,16 +43,35 @@ func main() {
 		logger.Fatal("Failed to run migrations: %v", err)
 	}
 
-	// Initialize repositories
+	// ========================================
+	// Initialize Repositories
+	// ========================================
 	userRepo := repository.NewUserRepository(database.GetDB())
+	categoryRepo := repository.NewCategoryRepository(database.GetDB()) // 🆕 New
 
-	// inside main, after cfg and DB are ready
-	emailService := utils.NewConsoleEmailService("http://localhost:" + cfg.App.Port)
+	// ========================================
+	// Initialize Email Service
+	// ========================================
+	var emailService utils.EmailService
+	if cfg.IsProduction() && cfg.Email.From != "" {
+		emailService = utils.NewSMTPEmailService(cfg)
+		logger.Info("Using SMTP email service (from: %s)", cfg.Email.From)
+	} else {
+		emailService = utils.NewConsoleEmailService(cfg.App.URL)
+		logger.Info("Using console email service (dev mode)")
+	}
+
+	// ========================================
+	// Initialize Services
+	// ========================================
 	authService := service.NewAuthService(userRepo, emailService)
+	categoryService := service.NewCategoryService(categoryRepo) // 🆕 New
 
-
-	// Initialize handlers
+	// ========================================
+	// Initialize Handlers
+	// ========================================
 	authHandler := handler.NewAuthHandler(authService)
+	categoryHandler := handler.NewCategoryHandler(categoryService) // 🆕 New
 
 	// Set Gin mode
 	if cfg.IsProduction() {
@@ -69,7 +93,9 @@ func main() {
 		})
 	})
 
-	// API v1 routes
+	// ========================================
+	// API v1 Routes
+	// ========================================
 	v1 := router.Group("/api/v1")
 	{
 		// Auth routes (public)
@@ -78,21 +104,39 @@ func main() {
 			// Registration & Login
 			auth.POST("/register", authHandler.Register)
 			auth.POST("/login", authHandler.Login)
-			
-			// 🆕 Email Verification (public - no auth required)
+
+			// Email Verification (public - no auth required)
 			auth.GET("/verify", authHandler.VerifyEmail)
 			auth.POST("/resend-verification", authHandler.ResendVerification)
-			
+
 			// Protected routes (require authentication)
 			auth.GET("/me", middleware.AuthMiddleware(), authHandler.GetProfile)
 		}
 
-		// Protected routes example
-		// users := v1.Group("/users")
-		// users.Use(middleware.AuthMiddleware())
-		// {
-		//     users.GET("", userHandler.GetAll)
-		// }
+		// 🆕 Category routes (public)
+		categories := v1.Group("/categories")
+		{
+			categories.GET("", categoryHandler.GetAllCategories)
+			categories.GET("/active", categoryHandler.GetActiveCategories)
+			categories.GET("/root", categoryHandler.GetRootCategories)
+			categories.GET("/tree", categoryHandler.GetCategoryTree)
+			categories.GET("/:id", categoryHandler.GetCategoryByID)
+			categories.GET("/slug/:slug", categoryHandler.GetCategoryBySlug)
+			categories.GET("/:id/children", categoryHandler.GetCategoryWithChildren)
+		}
+
+		// 🆕 Admin routes (protected)
+		admin := v1.Group("/admin")
+		admin.Use(middleware.AuthMiddleware()) // All admin routes require authentication
+		{
+			// Category management (admin only)
+			adminCategories := admin.Group("/categories")
+			{
+				adminCategories.POST("", categoryHandler.CreateCategory)
+				adminCategories.PUT("/:id", categoryHandler.UpdateCategory)
+				adminCategories.DELETE("/:id", categoryHandler.DeleteCategory)
+			}
+		}
 	}
 
 	// Root endpoint

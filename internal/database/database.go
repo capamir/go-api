@@ -29,7 +29,7 @@ func Connect(cfg *config.Config) error {
 
 	// Configure GORM
 	var logLevel gormLogger.LogLevel
-	if cfg.IsDevelopment() {
+	if !cfg.IsProduction() {
 		logLevel = gormLogger.Info
 	} else {
 		logLevel = gormLogger.Error
