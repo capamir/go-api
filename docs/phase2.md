@@ -1,8 +1,8 @@
-# Phase 2: Authentication System
+# Phase 2: Authentication System with Email Verification
 
 ## Overview
 
-Built a complete authentication system with user registration, login, JWT token generation, and protected routes.
+Built a complete authentication system with user registration, login, JWT token generation, email verification, and protected routes.
 
 ## What We Built
 
@@ -10,14 +10,26 @@ Built a complete authentication system with user registration, login, JWT token 
 
 - **GORM Model** with proper struct tags
 - Fields: ID, FirstName, LastName, Email, Password, Phone, Role, Status, Timestamps
+- **🆕 Email Verification Fields:**
+  - `email_verified` (boolean) - Verification status
+  - `email_verified_at` (timestamp) - When verified
+  - `verification_token` (string) - Unique verification token
 - **Soft Delete** support with `DeletedAt`
 - **BeforeCreate Hook** for default values
-- **ToResponse()** method to hide sensitive data (password)
+- **ToResponse()** method to hide sensitive data (password, token)
 - **UserResponse** struct for safe API responses
+- **🆕 CanLogin()** method - Checks if user can authenticate
+
+**User Status Constants:**
+- `pending` - User registered but email not verified
+- `active` - Email verified, can login
+- `inactive` - Account disabled by admin
+- `banned` - Account banned
 
 **Key Features:**
 
 - Password never returned in JSON (using `json:"-"` tag)
+- Verification token never exposed in API responses
 - Email has unique index
 - Automatic timestamp management
 - Soft delete capability
@@ -28,7 +40,6 @@ Built a complete authentication system with user registration, login, JWT token 
 
 - **HashPassword()** - Bcrypt hashing with cost 10
 - **ComparePassword()** - Secure password comparison
-- **ValidatePassword()** - 8-72 character validation
 
 **Security:**
 
@@ -46,7 +57,7 @@ Built a complete authentication system with user registration, login, JWT token 
 
 **JWT Structure:**
 
-```json
+```
 {
   "user_id": 1,
   "email": "user@example.com",
@@ -67,13 +78,56 @@ Built a complete authentication system with user registration, login, JWT token 
 
 ---
 
-### 4. Response Utility (`internal/utils/response.go`)
+### 4. 🆕 Token Utility (`internal/utils/token.go`)
+
+Cryptographically secure token generation for email verification:
+
+**Functions:**
+- `GenerateSecureToken(length int)` - Generate random token
+- `GenerateVerificationToken()` - 64-character hex token (32 bytes)
+
+**Security:**
+- Uses `crypto/rand` (not `math/rand`)
+- 256 bits of entropy
+- Unpredictable, secure tokens
+
+---
+
+### 5. 🆕 Email Service (`internal/utils/email.go`)
+
+Abstraction layer for sending emails:
+
+**Interface:**
+```
+type EmailService interface {
+    SendVerificationEmail(to, token string) error
+}
+```
+
+**Implementations:**
+
+1. **ConsoleEmailService** (Development)
+   - Logs verification links to console
+   - Perfect for testing without email setup
+   
+2. **SMTPEmailService** (Production - Ready to implement)
+   - Sends real emails via SMTP
+   - Supports Gmail, SendGrid, custom SMTP
+   - Easy to configure via environment variables
+
+**Current Setup:**
+- Development: Uses console logging
+- Production: Switch to SMTP by updating `.env` and `main.go`
+
+---
+
+### 6. Response Utility (`internal/utils/response.go`)
 
 Standardized JSON responses across the API:
-
+ 
 **Success Response:**
 
-```json
+```
 {
   "success": true,
   "message": "Operation successful",
@@ -83,7 +137,7 @@ Standardized JSON responses across the API:
 
 **Error Response:**
 
-```json
+```
 {
   "success": false,
   "error": "Error message"
@@ -102,7 +156,7 @@ Standardized JSON responses across the API:
 
 ---
 
-### 5. User Repository (`internal/repository/user.go`)
+### 7. User Repository (`internal/repository/user.go`)
 
 Database access layer (GORM operations):
 
@@ -111,6 +165,7 @@ Database access layer (GORM operations):
 - `Create(user)` - Insert new user
 - `GetByEmail(email)` - Find user by email
 - `GetByID(id)` - Find user by ID
+- `🆕 GetByVerificationToken(token)` - Find user by verification token
 - `Update(user)` - Update user data
 - `Delete(id)` - Soft delete user
 - `GetAll(limit, offset)` - Paginated user list
@@ -121,40 +176,67 @@ Database access layer (GORM operations):
 - Returns `nil` for "not found" (not an error)
 - Distinguishes between "not found" and "database error"
 - GORM error handling
+- Efficient queries with proper indexes
 
 ---
 
-### 6. Auth Service (`internal/service/auth_service.go`)
+### 8. Auth Service (`internal/service/auth.go`)
 
-Business logic layer:
+Business logic layer with email verification:
 
-#### Register Flow:
+#### 🆕 Register Flow (Updated):
 
 1. Check if email exists
-2. Validate password strength
-3. Hash password
-4. Create user in database
+2. Hash password
+3. **Generate verification token**
+4. Create user with `status: pending`
+5. **Send verification email** (via EmailService)
+6. **Do NOT generate JWT token** (user must verify first)
+7. Return user data without token
+
+#### Login Flow (Updated):
+
+1. Find user by email
+2. **✅ Check if email is verified**
+3. Check user status (active/inactive/banned)
+4. Verify password
 5. Generate JWT token
 6. Return token + user data
 
-#### Login Flow:
+#### 🆕 Email Verification Flow:
+
+1. Find user by verification token
+2. Check if already verified
+3. Update user:
+   - `email_verified = true`
+   - `email_verified_at = now()`
+   - `status = active`
+   - `verification_token = ""` (clear token)
+4. Save to database
+5. Return success message
+
+#### 🆕 Resend Verification Flow:
 
 1. Find user by email
-2. Check user status (active/inactive)
-3. Verify password
-4. Generate JWT token
-5. Return token + user data
+2. Check if already verified
+3. Check cooldown period (1 minute)
+4. Generate new verification token
+5. Update user with new token
+6. Send new verification email
+7. Return success
 
 **Security:**
 
 - Never reveals if email exists (prevents enumeration)
 - Generic error messages for failed login
 - Password hashing before storage
-- Status check before login
+- Status and verification checks before login
+- Tokens are single-use (cleared after verification)
+- Cooldown prevents spam
 
 ---
 
-### 7. Auth Middleware (`internal/middleware/auth.go`)
+### 9. Auth Middleware (`internal/middleware/auth.go`)
 
 JWT validation middleware:
 
@@ -181,22 +263,38 @@ JWT validation middleware:
 
 ---
 
-### 8. Auth Handler (`internal/handler/auth_handler.go`)
+### 10. Auth Handler (`internal/handler/auth.go`)
 
 HTTP request handlers:
 
 #### Endpoints:
 
-**POST /api/v1/auth/register**
+**POST /api/v1/auth/register** (Updated)
 
-- Creates new user account
-- Returns JWT token
+- Creates new user account with `status: pending`
+- **Does NOT return JWT token**
+- Sends verification email
 - Status: 201 Created
 
-**POST /api/v1/auth/login**
+**POST /api/v1/auth/login** (Updated)
 
 - Authenticates user
-- Returns JWT token
+- **Checks email verification before allowing login**
+- Returns JWT token only if verified
+- Status: 200 OK
+
+**🆕 GET /api/v1/auth/verify?token=xxx**
+
+- Verifies user email via token
+- Activates user account
+- Public endpoint (no auth required)
+- Status: 200 OK
+
+**🆕 POST /api/v1/auth/resend-verification**
+
+- Sends new verification email
+- Public endpoint (no auth required)
+- Generic response (security)
 - Status: 200 OK
 
 **GET /api/v1/auth/me**
@@ -205,33 +303,118 @@ HTTP request handlers:
 - Returns current user profile
 - Status: 200 OK
 
-**Request/Response Examples:**
+---
 
-**Register:**
+## Complete User Journey
 
-Request:
+### 1️⃣ Registration
 
-```http
-POST /api/v1/auth/register
-Content-Type: application/json
+```
+curl -X POST http://localhost:8080/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "first_name": "John",
+    "last_name": "Doe",
+    "email": "john@example.com",
+    "password": "securepass123"
+  }'
 ```
 
-```json
+**Response (201):**
+```
 {
-  "first_name": "John",
-  "last_name": "Doe",
-  "email": "john@example.com",
-  "password": "securepass123",
-  "phone": "+1234567890"
+  "success": true,
+  "message": "Registration successful! Please check your email to verify your account.",
+  "data": {
+    "user": {
+      "id": 1,
+      "first_name": "John",
+      "last_name": "Doe",
+      "email": "john@example.com",
+      "email_verified": false,
+      "role": "customer",
+      "status": "pending",
+      "created_at": "2025-12-01T10:00:00Z"
+    }
+  }
 }
 ```
 
-Response (201):
+**📧 Check server logs for verification link:**
+```
+📧 [DEV] Verification email to john@example.com: http://localhost:8080/api/v1/auth/verify?token=abc123...
+```
 
-```json
+---
+
+### 2️⃣ Try Login (Will Fail - Email Not Verified)
+
+```
+curl -X POST http://localhost:8080/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "john@example.com",
+    "password": "securepass123"
+  }'
+```
+
+**Response (401):**
+```
+{
+  "success": false,
+  "error": "please verify your email before logging in"
+}
+```
+
+---
+
+### 3️⃣ Verify Email
+
+```
+# Copy token from server logs
+curl "http://localhost:8080/api/v1/auth/verify?token=abc123..."
+```
+
+**Response (200):**
+```
 {
   "success": true,
-  "message": "User registered successfully",
+  "message": "Email verified successfully! You can now login.",
+  "data": {
+    "message": "Email verified successfully! You can now login.",
+    "user": {
+      "id": 1,
+      "first_name": "John",
+      "last_name": "Doe",
+      "email": "john@example.com",
+      "email_verified": true,
+      "email_verified_at": "2025-12-01T10:05:00Z",
+      "role": "customer",
+      "status": "active",
+      "created_at": "2025-12-01T10:00:00Z"
+    }
+  }
+}
+```
+
+---
+
+### 4️⃣ Login (Now Works!)
+
+```
+curl -X POST http://localhost:8080/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "john@example.com",
+    "password": "securepass123"
+  }'
+```
+
+**Response (200):**
+```
+{
+  "success": true,
+  "message": "Login successful",
   "data": {
     "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
     "user": {
@@ -239,57 +422,48 @@ Response (201):
       "first_name": "John",
       "last_name": "Doe",
       "email": "john@example.com",
-      "phone": "+1234567890",
+      "email_verified": true,
       "role": "customer",
-      "status": "active",
-      "created_at": "2025-11-30T01:57:00Z"
+      "status": "active"
     }
   }
 }
 ```
 
-**Login:**
-**Login:**
+---
 
-Request:
+### 5️⃣ Resend Verification (If Needed)
 
-```http
-POST /api/v1/auth/login
-Content-Type: application/json
+```
+curl -X POST http://localhost:8080/api/v1/auth/resend-verification \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "john@example.com"
+  }'
 ```
 
-```json
-{
-  "email": "john@example.com",
-  "password": "securepass123"
-}
+**Response (200):**
 ```
-
-Response (200):
-
-```json
 {
   "success": true,
-  "message": "Login successful",
-  "data": {
-    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "user": { ... }
-  }
+  "message": "If the email exists and is not verified, a verification link has been sent.",
+  "data": null
 }
 ```
 
-**Get Profile:**
+---
 
-Request:
+### 6️⃣ Get Profile (Protected Route)
 
-```http
-GET /api/v1/auth/me
-Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+
+curl -X GET http://localhost:8080/api/v1/auth/me \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
-Response (200):
-
-```json
+**Response (200):**
+```
 {
   "success": true,
   "message": "Profile retrieved",
@@ -298,6 +472,7 @@ Response (200):
     "first_name": "John",
     "last_name": "Doe",
     "email": "john@example.com",
+    "email_verified": true,
     "role": "customer",
     "status": "active"
   }
@@ -306,34 +481,27 @@ Response (200):
 
 ---
 
-### 9. Database Auto-Migration (`internal/database/migrate.go`)
-
-- Automatic schema generation from GORM models
-- Creates/updates tables based on struct definitions
-- Handles indexes, foreign keys, constraints
-
-**Usage:**
-database.AutoMigrate() // Creates users table
-
----
-
 ## Architecture Pattern
 
 We used **Clean Architecture** / **Layered Architecture**:
+
+```
 Handler (HTTP)
-↓
-Service (Business Logic)
-↓
+    ↓
+Service (Business Logic) ← Uses EmailService interface
+    ↓
 Repository (Database)
-↓
+    ↓
 Database (GORM/MySQL)
+```
 
 **Benefits:**
 
 - **Separation of Concerns** - Each layer has one responsibility
-- **Testable** - Can mock each layer
+- **Testable** - Can mock each layer (including email service)
 - **Maintainable** - Easy to modify one layer without affecting others
-- **Scalable** - Can swap implementations (e.g., change database)
+- **Scalable** - Can swap implementations (e.g., change email provider)
+- **Dependency Injection** - EmailService injected at runtime
 
 ---
 
@@ -353,14 +521,22 @@ Database (GORM/MySQL)
    - Signature verification
    - Secure secret from environment
 
-3. **API Security**
+3. **Email Verification Security**
+
+   - Cryptographically secure tokens (256 bits)
+   - Single-use tokens (cleared after verification)
+   - Tokens never exposed in API responses
+   - User must verify before login
+
+4. **API Security**
 
    - Generic error messages (no info leakage)
    - Protected routes with middleware
    - Token validation on every request
    - User status checking
+   - Email enumeration prevention
 
-4. **Input Validation**
+5. **Input Validation**
    - Gin binding validation
    - Email format validation
    - Password length validation
@@ -368,53 +544,11 @@ Database (GORM/MySQL)
 
 ---
 
-## Colorful Terminal Output
-
-**Yes!** We use our custom logger (`pkg/logger`) with colorful output:
-
-✅ SUCCESS: User registered successfully: john@example.com
-⚠️ WARN: Login attempt with non-existent email: fake@example.com
-❌ ERROR: Failed to hash password: invalid length
-🔄 Database: Connecting to MySQL...
-✅ Database: Successfully connected to database 'ecommerce'
-
-**Color Scheme:**
-
-- 🔵 **INFO** (Blue) - General information
-- 🟢 **SUCCESS** (Green) - Successful operations
-- 🟡 **WARN** (Yellow) - Warnings
-- 🔴 **ERROR** (Red) - Errors
-- 🔵 **DEBUG** (Cyan) - Debug info
-
----
-
-## Files Created in Phase 2
-
-internal/
-├── models/
-│ └── user.go # User GORM model
-├── repository/
-│ └── user.go # User database operations
-├── service/
-│ └── auth_service.go # Authentication business logic
-├── handler/
-│ └── auth_handler.go # HTTP handlers for auth
-├── middleware/
-│ └── auth.go # JWT authentication middleware
-├── utils/
-│ ├── password.go # Password hashing utilities
-│ ├── jwt.go # JWT token utilities
-│ └── response.go # Standard API responses
-└── database/
-└── migrate.go # Auto-migration setup
-
----
-
 ## Database Schema
 
 **users table:**
 
-```sql
+```
 CREATE TABLE users (
   id bigint unsigned NOT NULL AUTO_INCREMENT,
   first_name varchar(100) NOT NULL,
@@ -423,116 +557,175 @@ CREATE TABLE users (
   password varchar(255) NOT NULL,
   phone varchar(20),
   role varchar(20) DEFAULT 'customer',
-  status varchar(20) DEFAULT 'active',
+  status varchar(20) DEFAULT 'pending',
+  email_verified tinyint(1) DEFAULT 0,
+  email_verified_at datetime(3),
+  verification_token varchar(255),
   created_at datetime(3),
   updated_at datetime(3),
   deleted_at datetime(3),
   PRIMARY KEY (id),
   UNIQUE KEY idx_users_email (email),
-  KEY idx_users_deleted_at (deleted_at)
+  KEY idx_users_deleted_at (deleted_at),
+  KEY idx_verification_token (verification_token)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
 
 ---
 
-## Testing the API
+## Files Created/Updated in Phase 2
 
-### 1. Register a User
-
-```bash
-curl -X POST http://localhost:8080/api/v1/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{
-    "first_name": "John",
-    "last_name": "Doe",
-    "email": "john@example.com",
-    "password": "securepass123"
-  }'
 ```
+internal/
+├── models/
+│   └── user.go                  # ✅ Updated with verification fields
+├── repository/
+│   └── user.go                  # ✅ Updated with GetByVerificationToken()
+├── service/
+│   └── auth.go                  # ✅ Updated with verification logic
+├── handler/
+│   └── auth.go                  # ✅ Updated with verification handlers
+├── middleware/
+│   └── auth.go                  # JWT authentication middleware
+├── utils/
+│   ├── password.go              # Password hashing utilities
+│   ├── jwt.go                   # JWT token utilities
+│   ├── 🆕 token.go              # Verification token generation
+│   ├── 🆕 email.go              # Email service abstraction
+│   └── response.go              # Standard API responses
+└── database/
+    └── migrate.go               # Auto-migration setup
 
-### 2. Login
-
-```bash
-curl -X POST http://localhost:8080/api/v1/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "john@example.com",
-    "password": "securepass123"
-  }'
+cmd/api/
+└── main.go                      # ✅ Updated with EmailService injection
 ```
-
-### 3. Get Profile (Protected)
-
-TOKEN="your-jwt-token-here"
-
-curl -X GET http://localhost:8080/api/v1/auth/me
--H "Authorization: Bearer $TOKEN"
 
 ---
 
-## Next Steps (Phase 3)
+## Colorful Terminal Output
 
-- [ ] Product model (GORM)
-- [ ] Product repository
-- [ ] Product service
-- [ ] Product handlers
-- [ ] Product CRUD endpoints
-- [ ] Image upload support
-- [ ] Product search & filtering
-- [ ] Pagination
+**Enhanced logging with email verification:**
+
+```
+📧 [DEV] Verification email to john@example.com: http://localhost:8080/api/v1/auth/verify?token=abc123...
+✅ SUCCESS: User registered (pending verification): john@example.com
+⚠️ WARN: Login attempt with unverified email: john@example.com
+✅ SUCCESS: Email verified for user: john@example.com
+✅ SUCCESS: User logged in successfully: john@example.com
+```
 
 ---
 
-## Key Learnings
+## Testing Checklist
 
-1. **GORM Hooks** - `BeforeCreate` for default values
-2. **Gin Binding** - Automatic request validation
-3. **JWT Claims** - Custom + Standard claims
-4. **Middleware Pattern** - Reusable authentication
-5. **Clean Architecture** - Layer separation
-6. **Error Handling** - Generic messages for security
-7. **Context Usage** - Passing data between middleware and handlers
-8. **Bcrypt** - Secure password hashing
+- [ ] Register user → Status should be `pending`, no JWT token
+- [ ] Try login before verification → Should fail with error message
+- [ ] Verify email with token → Status should become `active`
+- [ ] Try login after verification → Should succeed with JWT token
+- [ ] Get profile with JWT → Should return user data
+- [ ] Resend verification → Should generate new token
+- [ ] Try verify with invalid token → Should fail
+- [ ] Try verify already verified user → Should show "already verified"
 
 ---
 
 ## Common Issues & Solutions
 
-**Issue:** "Email already registered"
+**Issue:** "Please verify your email before logging in"
+- **Solution:** Check server logs for verification link and click it.
 
+**Issue:** "Invalid or expired verification token"
+- **Solution:** Token may have been used already or is incorrect. Request resend.
+
+**Issue:** "Email already registered"
 - **Solution:** Each email must be unique. Try different email.
 
-**Issue:** "Invalid or expired token"
+**Issue:** "Account is not active"
+- **Solution:** User status is not "active". Check if email is verified.
 
-- **Solution:** Token expired (24h). Login again to get new token.
-
-**Issue:** "Missing authentication token"
-
-- **Solution:** Add `Authorization: Bearer <token>` header to request.
-
-**Issue:** "Invalid request data"
-
-- **Solution:** Check JSON format and required fields (first_name, last_name, email, password).
+**Issue:** Missing verification link in logs
+- **Solution:** Make sure EmailService is properly initialized in `main.go`.
 
 ---
 
 ## Environment Variables Required
 
-Application
+```
+# Application
 APP_ENV=development
 APP_PORT=8080
+APP_URL=http://localhost:8080
 
-Database
+# Database
 DB_HOST=127.0.0.1
 DB_PORT=3306
 DB_USER=root
 DB_PASSWORD=your_password
 DB_NAME=ecommerce
 
-JWT
+# JWT
 JWT_SECRET=your-super-secret-jwt-key-change-in-production
-JWT_EXPIRATION_HOURS=24
+JWT_EXPIRATION=24h
 
-Server
-SERVER_READ_TIMEOUT=15
-SERVER_WRITE_TIMEOUT=15
+# Server
+SERVER_READ_TIMEOUT=15s
+SERVER_WRITE_TIMEOUT=15s
+
+# 🆕 Email (Optional - For Production SMTP)
+# EMAIL_FROM=your-email@gmail.com
+# EMAIL_PASSWORD=your-app-password
+# EMAIL_HOST=smtp.gmail.com
+# EMAIL_PORT=587
+```
+
+---
+
+## Future Enhancements (Optional)
+
+- [ ] Password reset via email
+- [ ] Email templates (HTML emails)
+- [ ] Production SMTP setup (Gmail/SendGrid)
+- [ ] Token expiration (verification links expire after 24 hours)
+- [ ] Rate limiting on registration
+- [ ] 2FA (Two-Factor Authentication)
+- [ ] OAuth2 (Google, GitHub login)
+- [ ] Email change verification
+
+---
+
+## Key Learnings
+
+1. **Email Verification Flow** - Standard practice for user registration
+2. **Token Generation** - Using crypto/rand for security
+3. **Dependency Injection** - EmailService interface pattern
+4. **Status Management** - pending → active user states
+5. **Single-Use Tokens** - Clear tokens after use
+6. **Console Development** - Test without email setup
+7. **Clean Architecture** - Easy to swap email providers
+8. **Security Best Practices** - No email enumeration, generic errors
+
+---
+
+## Phase 2: Complete! ✅
+
+**What We Built:**
+- ✅ User registration with email verification
+- ✅ Email verification via secure tokens
+- ✅ Login with verification check
+- ✅ Resend verification functionality
+- ✅ JWT authentication
+- ✅ Protected routes
+- ✅ Clean architecture with dependency injection
+- ✅ Console email service for development
+- ✅ Production-ready email abstraction
+
+**Ready for Phase 3!** 🚀
+
+---
+
+**Next Steps:**
+- Phase 3: Product Management
+- Phase 4: Shopping Cart
+- Phase 5: Order Management
+- Phase 6: Payment Integration
+```
