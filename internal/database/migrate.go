@@ -12,7 +12,8 @@ func AutoMigrate() error {
 	// Add all models here
 	err := DB.AutoMigrate(
 		&models.User{},
-		&models.Category{}, // 🆕 Add this
+		&models.Category{}, 
+		&models.Tag{},
 	)
 
 	if err != nil {

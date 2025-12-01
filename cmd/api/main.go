@@ -47,7 +47,8 @@ func main() {
 	// Initialize Repositories
 	// ========================================
 	userRepo := repository.NewUserRepository(database.GetDB())
-	categoryRepo := repository.NewCategoryRepository(database.GetDB()) // 🆕 New
+	categoryRepo := repository.NewCategoryRepository(database.GetDB())
+	tagRepo := repository.NewTagRepository(database.GetDB()) 
 
 	// ========================================
 	// Initialize Email Service
@@ -65,13 +66,15 @@ func main() {
 	// Initialize Services
 	// ========================================
 	authService := service.NewAuthService(userRepo, emailService)
-	categoryService := service.NewCategoryService(categoryRepo) // 🆕 New
+	categoryService := service.NewCategoryService(categoryRepo) 
+	tagService := service.NewTagService(tagRepo) 
 
 	// ========================================
 	// Initialize Handlers
 	// ========================================
 	authHandler := handler.NewAuthHandler(authService)
-	categoryHandler := handler.NewCategoryHandler(categoryService) // 🆕 New
+	categoryHandler := handler.NewCategoryHandler(categoryService) 
+	tagHandler := handler.NewTagHandler(tagService)
 
 	// Set Gin mode
 	if cfg.IsProduction() {
@@ -124,6 +127,15 @@ func main() {
 			categories.GET("/slug/:slug", categoryHandler.GetCategoryBySlug)
 			categories.GET("/:id/children", categoryHandler.GetCategoryWithChildren)
 		}
+		// 🆕 Tag routes (public)
+		tags := v1.Group("/tags")
+		{
+			tags.GET("", tagHandler.GetAllTags)
+			tags.GET("/all", tagHandler.GetAllTagsList)
+			tags.GET("/search", tagHandler.SearchTags)
+			tags.GET("/:id", tagHandler.GetTagByID)
+			tags.GET("/slug/:slug", tagHandler.GetTagBySlug)
+		}
 
 		// 🆕 Admin routes (protected)
 		admin := v1.Group("/admin")
@@ -135,6 +147,13 @@ func main() {
 				adminCategories.POST("", categoryHandler.CreateCategory)
 				adminCategories.PUT("/:id", categoryHandler.UpdateCategory)
 				adminCategories.DELETE("/:id", categoryHandler.DeleteCategory)
+			}
+			// 🆕 Tag management (admin only)
+			adminTags := admin.Group("/tags")
+			{
+				adminTags.POST("", tagHandler.CreateTag)
+				adminTags.PUT("/:id", tagHandler.UpdateTag)
+				adminTags.DELETE("/:id", tagHandler.DeleteTag)
 			}
 		}
 	}
