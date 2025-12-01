@@ -49,6 +49,7 @@ func main() {
 	userRepo := repository.NewUserRepository(database.GetDB())
 	categoryRepo := repository.NewCategoryRepository(database.GetDB())
 	tagRepo := repository.NewTagRepository(database.GetDB()) 
+	productRepo := repository.NewProductRepository(database.GetDB()) 
 
 	// ========================================
 	// Initialize Email Service
@@ -68,6 +69,7 @@ func main() {
 	authService := service.NewAuthService(userRepo, emailService)
 	categoryService := service.NewCategoryService(categoryRepo) 
 	tagService := service.NewTagService(tagRepo) 
+	productService := service.NewProductService(productRepo, categoryRepo, tagRepo) 
 
 	// ========================================
 	// Initialize Handlers
@@ -75,6 +77,7 @@ func main() {
 	authHandler := handler.NewAuthHandler(authService)
 	categoryHandler := handler.NewCategoryHandler(categoryService) 
 	tagHandler := handler.NewTagHandler(tagService)
+	productHandler := handler.NewProductHandler(productService) 
 
 	// Set Gin mode
 	if cfg.IsProduction() {
@@ -137,6 +140,16 @@ func main() {
 			tags.GET("/slug/:slug", tagHandler.GetTagBySlug)
 		}
 
+		// 🆕 Product routes (public)
+		products := v1.Group("/products")
+		{
+			products.GET("", productHandler.GetAllProducts)
+			products.GET("/featured", productHandler.GetFeaturedProducts)
+			products.GET("/:id", productHandler.GetProductByID)
+			products.GET("/slug/:slug", productHandler.GetProductBySlug)
+			products.GET("/:id/related", productHandler.GetRelatedProducts)
+		}
+
 		// 🆕 Admin routes (protected)
 		admin := v1.Group("/admin")
 		admin.Use(middleware.AuthMiddleware()) // All admin routes require authentication
@@ -154,6 +167,14 @@ func main() {
 				adminTags.POST("", tagHandler.CreateTag)
 				adminTags.PUT("/:id", tagHandler.UpdateTag)
 				adminTags.DELETE("/:id", tagHandler.DeleteTag)
+			}
+			// 🆕 Product management (admin only)
+			adminProducts := admin.Group("/products")
+			{
+				adminProducts.POST("", productHandler.CreateProduct)
+				adminProducts.PUT("/:id", productHandler.UpdateProduct)
+				adminProducts.DELETE("/:id", productHandler.DeleteProduct)
+				adminProducts.PUT("/:id/stock", productHandler.UpdateStock)
 			}
 		}
 	}

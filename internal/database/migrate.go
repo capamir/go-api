@@ -14,6 +14,7 @@ func AutoMigrate() error {
 		&models.User{},
 		&models.Category{}, 
 		&models.Tag{},
+		&models.Product{},
 	)
 
 	if err != nil {
