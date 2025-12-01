@@ -71,3 +71,31 @@ func (r *UserRepository) EmailExists(email string) (bool, error) {
 	err := r.db.Model(&models.User{}).Where("email = ?", email).Count(&count).Error
 	return count > 0, err
 }
+
+// ========================================
+// 🆕 EMAIL VERIFICATION METHODS
+// ========================================
+
+// GetByVerificationToken retrieves a user by their verification token
+func (r *UserRepository) GetByVerificationToken(token string) (*models.User, error) {
+	var user models.User
+	err := r.db.Where("verification_token = ?", token).First(&user).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil // Token not found (not an error)
+		}
+		return nil, err
+	}
+	return &user, nil
+}
+
+// GetUnverifiedUsers retrieves users who haven't verified their email
+// Useful for: sending reminder emails, cleanup old unverified accounts
+func (r *UserRepository) GetUnverifiedUsers(limit int) ([]models.User, error) {
+	var users []models.User
+	err := r.db.Where("email_verified = ?", false).
+		Limit(limit).
+		Order("created_at ASC"). // Oldest first
+		Find(&users).Error
+	return users, err
+}

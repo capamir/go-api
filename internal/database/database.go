@@ -14,7 +14,7 @@ import (
 // DB is the global database instance
 var DB *gorm.DB
 
-// Connect establishes a connection to the MySQL database
+// establishes a connection to the MySQL database
 func Connect(cfg *config.Config) error {
 	logger.Log.DB("connecting", "Connecting to MySQL database...")
 
@@ -75,7 +75,7 @@ func Connect(cfg *config.Config) error {
 	return nil
 }
 
-// Close closes the database connection
+// closes the database connection
 func Close() error {
 	if DB != nil {
 		sqlDB, err := DB.DB()
@@ -87,7 +87,7 @@ func Close() error {
 	return nil
 }
 
-// GetDB returns the database instance
+// returns the database instance
 func GetDB() *gorm.DB {
 	return DB
 }

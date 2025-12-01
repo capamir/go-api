@@ -18,6 +18,10 @@ func NewAuthHandler(authService *service.AuthService) *AuthHandler {
 	return &AuthHandler{authService: authService}
 }
 
+// ========================================
+// EXISTING HANDLERS
+// ========================================
+
 // Register handles user registration
 // @Summary Register a new user
 // @Tags auth
@@ -45,7 +49,8 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	utils.RespondCreated(c, "User registered successfully", response)
+	// Updated message to reflect pending verification
+	utils.RespondCreated(c, "Registration successful! Please check your email to verify your account.", response)
 }
 
 // Login handles user login
@@ -104,4 +109,79 @@ func (h *AuthHandler) GetProfile(c *gin.Context) {
 	}
 
 	utils.RespondSuccess(c, "Profile retrieved", user)
+}
+
+// ========================================
+// 🆕 EMAIL VERIFICATION HANDLERS
+// ========================================
+
+// VerifyEmail handles email verification via token
+// @Summary Verify user email
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param token query string true "Verification token"
+// @Success 200 {object} service.VerificationResponse
+// @Failure 400 {object} utils.ErrorResponse
+// @Router /auth/verify [get]
+func (h *AuthHandler) VerifyEmail(c *gin.Context) {
+	// Get token from query parameter
+	token := c.Query("token")
+	
+	// Validate token parameter
+	if token == "" {
+		logger.Warn("Email verification attempted without token")
+		utils.RespondBadRequest(c, "Verification token is required")
+		return
+	}
+
+	// Verify email
+	response, err := h.authService.VerifyEmail(token)
+	if err != nil {
+		logger.Error("Email verification failed: %v", err)
+		utils.RespondBadRequest(c, err.Error())
+		return
+	}
+
+	logger.Success("Email verified successfully for user: %s", response.User.Email)
+	utils.RespondSuccess(c, response.Message, response)
+}
+
+// ResendVerification handles resending verification email
+// @Summary Resend verification email
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param request body ResendVerificationRequest true "Email address"
+// @Success 200 {object} utils.SuccessResponse
+// @Failure 400 {object} utils.ErrorResponse
+// @Router /auth/resend-verification [post]
+func (h *AuthHandler) ResendVerification(c *gin.Context) {
+	var req ResendVerificationRequest
+
+	// Bind and validate request
+	if err := c.ShouldBindJSON(&req); err != nil {
+		logger.Warn("Invalid resend verification request: %v", err)
+		utils.RespondBadRequest(c, "Invalid request data")
+		return
+	}
+
+	// Resend verification email
+	if err := h.authService.ResendVerificationEmail(req.Email); err != nil {
+		logger.Error("Failed to resend verification email: %v", err)
+		utils.RespondBadRequest(c, err.Error())
+		return
+	}
+
+	// Generic success message (don't reveal if email exists)
+	utils.RespondSuccess(c, "If the email exists and is not verified, a verification link has been sent.", nil)
+}
+
+// ========================================
+// REQUEST DTOs (for this handler)
+// ========================================
+
+// ResendVerificationRequest represents the request body for resending verification
+type ResendVerificationRequest struct {
+	Email string `json:"email" binding:"required,email"`
 }

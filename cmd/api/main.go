@@ -15,6 +15,7 @@ import (
 	"github.com/capamir/go-api/internal/middleware"
 	"github.com/capamir/go-api/internal/repository"
 	"github.com/capamir/go-api/internal/service"
+	"github.com/capamir/go-api/internal/utils"
 	"github.com/capamir/go-api/pkg/logger"
 	"github.com/gin-gonic/gin"
 )
@@ -40,8 +41,10 @@ func main() {
 	// Initialize repositories
 	userRepo := repository.NewUserRepository(database.GetDB())
 
-	// Initialize services
-	authService := service.NewAuthService(userRepo)
+	// inside main, after cfg and DB are ready
+	emailService := utils.NewConsoleEmailService("http://localhost:" + cfg.App.Port)
+	authService := service.NewAuthService(userRepo, emailService)
+
 
 	// Initialize handlers
 	authHandler := handler.NewAuthHandler(authService)
@@ -72,8 +75,15 @@ func main() {
 		// Auth routes (public)
 		auth := v1.Group("/auth")
 		{
+			// Registration & Login
 			auth.POST("/register", authHandler.Register)
 			auth.POST("/login", authHandler.Login)
+			
+			// 🆕 Email Verification (public - no auth required)
+			auth.GET("/verify", authHandler.VerifyEmail)
+			auth.POST("/resend-verification", authHandler.ResendVerification)
+			
+			// Protected routes (require authentication)
 			auth.GET("/me", middleware.AuthMiddleware(), authHandler.GetProfile)
 		}
 
