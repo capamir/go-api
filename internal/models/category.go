@@ -30,7 +30,8 @@ func (Category) TableName() string {
 // BeforeCreate hook - called before inserting record
 func (c *Category) BeforeCreate(tx *gorm.DB) error {
 	// Set default values
-	if c.IsActive == false && tx.Statement.Changed("IsActive") == false {
+	if !c.IsActive && !tx.Statement.Changed("IsActive") {
+
 		c.IsActive = true
 	}
 	return nil

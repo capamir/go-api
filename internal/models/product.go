@@ -37,7 +37,8 @@ func (Product) TableName() string {
 // BeforeCreate hook - called before inserting record
 func (p *Product) BeforeCreate(tx *gorm.DB) error {
 	// Set default values
-	if p.IsActive == false && tx.Statement.Changed("IsActive") == false {
+	if !p.IsActive && !tx.Statement.Changed("IsActive") {
+
 		p.IsActive = true
 	}
 	return nil
