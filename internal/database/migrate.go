@@ -15,6 +15,10 @@ func AutoMigrate() error {
 		&models.Category{}, 
 		&models.Tag{},
 		&models.Product{},
+		&models.Cart{},      
+		&models.CartItem{},  
+		&models.Order{},     
+		&models.OrderItem{}, 
 	)
 
 	if err != nil {

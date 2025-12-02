@@ -50,6 +50,8 @@ func main() {
 	categoryRepo := repository.NewCategoryRepository(database.GetDB())
 	tagRepo := repository.NewTagRepository(database.GetDB()) 
 	productRepo := repository.NewProductRepository(database.GetDB()) 
+	cartRepo := repository.NewCartRepository(database.GetDB()) 
+	orderRepo := repository.NewOrderRepository(database.GetDB())
 
 	// ========================================
 	// Initialize Email Service
@@ -70,6 +72,8 @@ func main() {
 	categoryService := service.NewCategoryService(categoryRepo) 
 	tagService := service.NewTagService(tagRepo) 
 	productService := service.NewProductService(productRepo, categoryRepo, tagRepo) 
+	cartService := service.NewCartService(cartRepo, productRepo)
+	orderService := service.NewOrderService(orderRepo, cartRepo, productRepo)
 
 	// ========================================
 	// Initialize Handlers
@@ -78,6 +82,8 @@ func main() {
 	categoryHandler := handler.NewCategoryHandler(categoryService) 
 	tagHandler := handler.NewTagHandler(tagService)
 	productHandler := handler.NewProductHandler(productService) 
+	cartHandler := handler.NewCartHandler(cartService)
+	orderHandler := handler.NewOrderHandler(orderService)  
 
 	// Set Gin mode
 	if cfg.IsProduction() {
@@ -104,7 +110,9 @@ func main() {
 	// ========================================
 	v1 := router.Group("/api/v1")
 	{
+		// ========================================
 		// Auth routes (public)
+		// ========================================
 		auth := v1.Group("/auth")
 		{
 			// Registration & Login
@@ -119,7 +127,9 @@ func main() {
 			auth.GET("/me", middleware.AuthMiddleware(), authHandler.GetProfile)
 		}
 
+		// ========================================
 		// 🆕 Category routes (public)
+		// ========================================
 		categories := v1.Group("/categories")
 		{
 			categories.GET("", categoryHandler.GetAllCategories)
@@ -130,7 +140,10 @@ func main() {
 			categories.GET("/slug/:slug", categoryHandler.GetCategoryBySlug)
 			categories.GET("/:id/children", categoryHandler.GetCategoryWithChildren)
 		}
+
+		// ========================================
 		// 🆕 Tag routes (public)
+		// ========================================
 		tags := v1.Group("/tags")
 		{
 			tags.GET("", tagHandler.GetAllTags)
@@ -140,7 +153,9 @@ func main() {
 			tags.GET("/slug/:slug", tagHandler.GetTagBySlug)
 		}
 
+		// ========================================
 		// 🆕 Product routes (public)
+		// ========================================
 		products := v1.Group("/products")
 		{
 			products.GET("", productHandler.GetAllProducts)
@@ -150,7 +165,34 @@ func main() {
 			products.GET("/:id/related", productHandler.GetRelatedProducts)
 		}
 
+		// ========================================
+		// 🆕 Cart routes (authenticated)
+		// ========================================
+		cart := v1.Group("/cart")
+		cart.Use(middleware.AuthMiddleware()) // All cart routes require authentication
+		{
+			cart.GET("", cartHandler.GetUserCart)
+			cart.POST("/items", cartHandler.AddToCart)
+			cart.PUT("/items/:item_id", cartHandler.UpdateCartItem)
+			cart.DELETE("/items/:item_id", cartHandler.RemoveCartItem)
+			cart.DELETE("", cartHandler.ClearCart)
+		}
+
+		// ========================================
+		// 🆕 Order routes (authenticated)
+		// ========================================
+		orders := v1.Group("/orders")
+		orders.Use(middleware.AuthMiddleware()) // All order routes require authentication
+		{
+			orders.POST("", orderHandler.CreateOrder)
+			orders.GET("", orderHandler.GetUserOrders)
+			orders.GET("/:id", orderHandler.GetOrderByID)
+			orders.PUT("/:id/cancel", orderHandler.CancelOrder)
+		}
+
+		// ========================================
 		// 🆕 Admin routes (protected)
+		// ========================================
 		admin := v1.Group("/admin")
 		admin.Use(middleware.AuthMiddleware()) // All admin routes require authentication
 		{
@@ -175,6 +217,13 @@ func main() {
 				adminProducts.PUT("/:id", productHandler.UpdateProduct)
 				adminProducts.DELETE("/:id", productHandler.DeleteProduct)
 				adminProducts.PUT("/:id/stock", productHandler.UpdateStock)
+			}
+			// 🆕 Order management (admin only)
+			adminOrders := admin.Group("/orders")
+			{
+				adminOrders.GET("", orderHandler.GetAllOrders)
+				adminOrders.GET("/stats", orderHandler.GetOrderStats)
+				adminOrders.PUT("/:id/status", orderHandler.UpdateOrderStatus)
 			}
 		}
 	}
